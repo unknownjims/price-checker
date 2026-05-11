@@ -1,0 +1,63 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build APK with Cordova
+        run: |
+          set -euo pipefail
+
+          npm install -g cordova
+
+          # Create Cordova project
+          cordova create android-app com.pricechecker.app "Price Checker"
+          cd android-app
+
+          # Add Android platform
+          cordova platform add android@13.0.0
+
+          # Install barcode scanner plugin
+          cordova plugin add phonegap-plugin-barcodescanner
+          cordova plugin add cordova-plugin-splashscreen
+
+          # Copy our web app files to www/
+          rm -rf www/*
+          cp ../price-checker-standalone.html www/index.html
+          cp ../static/style.css www/ 2>/dev/null || true
+          cp ../static/app.js www/ 2>/dev/null || true
+          cp ../manifest.json www/
+          cp ../service-worker.js www/
+          cp ../icon-192.png www/ 2>/dev/null || true
+          cp ../icon-512.png www/ 2>/dev/null || true
+
+          # Build debug APK (faster, no signing needed)
+          cordova build android --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Price-Checker-APK
+          path: android-app/platforms/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
