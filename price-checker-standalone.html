@@ -250,8 +250,6 @@ body{display:flex;flex-direction:column}
 
     <div class="toast" id="toast"></div>
 
-<!-- OCR - load async so it doesn't block app -->
-<script async src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 // ═══════════════════════════════════════════
 // INDEXEDDB
@@ -448,37 +446,36 @@ async function onBarcodeDetected(code) {
 }
 
 // ═══════════════════════════════════════════
-// OCR SKU FROM PRICE TAG
+// OCR SKU FROM PRICE TAG (optional - won't break app if unavailable)
 // ═══════════════════════════════════════════
-let ocrWorker = null;
 let ocrReady = false;
 
-// Try to init OCR worker on idle (doesn't block app)
-setTimeout(async () => {
+// Dynamically load Tesseract.js in background (safe - never blocks)
+function loadTesseract(callback) {
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+  s.onload = callback;
+  s.onerror = () => {};
+  document.head.appendChild(s);
+}
+
+loadTesseract(async () => {
   try {
-    if (typeof Tesseract !== 'undefined') {
-      ocrWorker = await Tesseract.createWorker('eng', 1, {
-        logger: () => {}
-      });
-      await ocrWorker.setParameters({
-        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-/:',
-      });
-      ocrReady = true;
-    }
-  } catch(e) {
-    console.warn('OCR init deferred');
-  }
-}, 3000);
+    if (typeof Tesseract === 'undefined') return;
+    const w = await Tesseract.createWorker('eng', 1, { logger: () => {} });
+    await w.setParameters({
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-/:',
+    });
+    window.__ocrWorker = w;
+    ocrReady = true;
+  } catch(e) { /* OCR unavailable - not critical */ }
+});
 
 async function ocrSkuFromCamera(barcode) {
-  const status = document.getElementById('scanStatus');
-
-  // FIRST: Try native TextDetector API (instantly available on Chrome Android)
   try {
     if ('TextDetector' in window) {
       const video = document.getElementById('camera');
       if (!video || !video.videoWidth) return;
-
       const detector = new TextDetector();
       const texts = await detector.detect(video);
       if (texts && texts.length > 0) {
@@ -487,29 +484,20 @@ async function ocrSkuFromCamera(barcode) {
         if (sku) { fillSku(sku); return; }
       }
     }
-  } catch(e) { /* TextDetector not available */ }
+  } catch(e) { /* nop */ }
 
-  // SECOND: Wait for Tesseract.js to be ready
-  if (!ocrReady) return;
-
-  status.textContent = '🔍 Reading SKU from tag...';
+  if (!ocrReady || !window.__ocrWorker) return;
+  const video = document.getElementById('camera');
+  if (!video || !video.videoWidth) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = Math.min(video.videoHeight, Math.round(video.videoWidth * 0.6));
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   try {
-    const video = document.getElementById('camera');
-    if (!video || !video.videoWidth) return;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = Math.min(video.videoHeight, Math.round(video.videoWidth * 0.6));
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const { data } = await ocrWorker.recognize(canvas);
+    const { data } = await window.__ocrWorker.recognize(canvas);
     const sku = extractSku(data.text || '', barcode);
     if (sku) fillSku(sku);
-  } catch(e) {
-    console.warn('OCR error:', e);
-  }
-  status.textContent = '📸 Ready — point at barcode';
+  } catch(e) { /* OCR failed - user types manually */ }
 }
 
 function extractSku(text, barcode) {
@@ -519,8 +507,8 @@ function extractSku(text, barcode) {
   if (m) return m[1];
   const nums = text.match(/\b(\d{7,13})\b/g);
   if (nums) {
-    const filtered = nums.filter(n => n !== barcode && !barcode.includes(n) && !n.includes(barcode));
-    if (filtered.length > 0) return filtered[0];
+    const f = nums.filter(n => n !== barcode && !barcode.includes(n) && !n.includes(barcode));
+    if (f.length) return f[0];
   }
   return null;
 }
@@ -665,14 +653,14 @@ async function renderProducts() {
     return;
   }
   list.innerHTML = filtered.slice(0, 200).map(p => `
-    <div class="prod-item" onclick="showProductDetail('${p.barcode}')">
+    <div class="prod-item" data-barcode="${p.barcode}" onclick="showProductDetail(this.dataset.barcode)">
       <div style="display:flex;justify-content:space-between;align-items:start">
         <div>
           <div class="bcode">${p.barcode}</div>
           <div class="sku">SKU: ${p.sku}</div>
           <div class="desc">${p.description || '—'}</div>
         </div>
-        <button class="prod-del" onclick="event.stopPropagation();confirmDelete('Delete ${p.sku}?','This removes the product from your database.','deleteProduct(\'${p.barcode}\')')">✕</button>
+        <button class="prod-del" data-barcode="${p.barcode}" onclick="event.stopPropagation();deleteProductById(this.dataset.barcode)">✕</button>
       </div>
     </div>
   `).join('');
@@ -690,14 +678,14 @@ async function showProductDetail(barcode) {
       <div class="sku">Barcode: ${p.barcode}</div>
       <div class="result-actions" style="margin-top:16px">
         <button class="btn-secondary" onclick="hideResult()">Done</button>
-        <button class="btn-primary" style="background:var(--danger)" onclick="confirmDelete('Delete ${p.sku}?','This removes the product from your database.','deleteProduct(\'${p.barcode}\');hideResult()')">🗑️ Delete</button>
+        <button class="btn-primary" style="background:var(--danger)" onclick="deleteProductById('${p.barcode}');hideResult()">🗑️ Delete</button>
       </div>
     </div>
   `;
   document.getElementById('resultCard').classList.add('show');
 }
 
-async function deleteProduct(barcode) {
+async function deleteProductById(barcode) {
   closeModal('confirmModal');
   await dbDelete('products', barcode);
   renderProducts();
