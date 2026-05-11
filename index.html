@@ -599,7 +599,7 @@ async function renderLists() {
       <div class="meta">${l.type === 'promotion' ? 'Ends ' + l.endDate + (daysLeft > 0 ? ' (' + daysLeft + ' days)' : expired ? ' (EXPIRED)' : '') : 'Permanent'}</div>
       <div class="actions">
         <button class="btn-secondary" onclick="toggleList(${l.id})">${l.active === false ? '▶ Activate' : '⏸ Pause'}</button>
-        <button class="btn-secondary" style="color:var(--danger)" onclick="confirmDelete('Delete ${l.name}?','This removes the list and all its items.','deleteList(${l.id})')">🗑️</button>
+        <button class="btn-secondary" style="color:var(--danger)" onclick="confirmDelete('Delete ${l.name}?','This removes the list and all its items.',() => deleteList(${l.id}))">🗑️</button>
         <button class="btn-secondary file-input" style="position:relative;overflow:hidden">
           + Items
           <input type="file" accept=".csv" onchange="importListItems(event, ${l.id})" style="position:absolute;top:0;left:0;opacity:0;width:100%;height:100%;cursor:pointer">
