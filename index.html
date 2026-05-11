@@ -245,8 +245,10 @@ body{display:flex;flex-direction:column}
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+    <div class="toast" id="toast"></div>
 
+<!-- OCR for reading SKU from price tags -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 // ═══════════════════════════════════════════
 // INDEXEDDB
@@ -437,6 +439,96 @@ async function onBarcodeDetected(code) {
     showProductResult(product);
   } else {
     showUnknownResult(code);
+    // Try to read SKU from the price tag via OCR
+    ocrSkuFromCamera(code);
+  }
+}
+
+// ═══════════════════════════════════════════
+// OCR SKU FROM PRICE TAG
+// ═══════════════════════════════════════════
+let ocrWorker = null;
+
+async function getOcrWorker() {
+  if (ocrWorker) return ocrWorker;
+  try {
+    ocrWorker = await Tesseract.createWorker('eng', 1, {
+      logger: (m) => { /* silent */ }
+    });
+    // Set character whitelist for SKU: digits, letters, and common separators
+    await ocrWorker.setParameters({
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-/:',
+    });
+    return ocrWorker;
+  } catch(e) {
+    console.warn('OCR worker init failed:', e);
+    return null;
+  }
+}
+
+async function ocrSkuFromCamera(barcode) {
+  const status = document.getElementById('scanStatus');
+  status.textContent = '🔍 Reading SKU from tag...';
+
+  try {
+    // Capture a frame from the video
+    const video = document.getElementById('camera');
+    if (!video || !video.videoWidth) return;
+
+    const canvas = document.createElement('canvas');
+    // Capture a wider/higher area to include text below the barcode
+    canvas.width = video.videoWidth;
+    canvas.height = Math.min(video.videoHeight, Math.round(video.videoWidth * 0.6));
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Run OCR
+    const worker = await getOcrWorker();
+    if (!worker) {
+      status.textContent = '📸 Ready — point at barcode';
+      return;
+    }
+
+    const { data } = await worker.recognize(canvas);
+    const text = data.text || '';
+    status.textContent = '📸 Ready — point at barcode';
+
+    // Extract SKU patterns: look for "SKU", "SKU:", or standalone number sequences
+    let sku = null;
+
+    // Pattern 1: "SKU: 1234567890"
+    const skuMatch = text.match(/[Ss][Kk][Uu]\s*:?\s*(\d{6,13})/);
+    if (skuMatch) sku = skuMatch[1];
+
+    // Pattern 2: "1301" prefix (common UK retail SKU format)
+    if (!sku) {
+      const numMatch = text.match(/\b(1301\d{3,9})\b/);
+      if (numMatch) sku = numMatch[1];
+    }
+
+    // Pattern 3: Any 7-13 digit number that's NOT the barcode itself
+    if (!sku) {
+      const numbers = text.match(/\b(\d{7,13})\b/g);
+      if (numbers) {
+        // Pick the one that doesn't match the barcode
+        const filtered = numbers.filter(n => n !== barcode && !barcode.includes(n) && !n.includes(barcode));
+        if (filtered.length > 0) {
+          sku = filtered[0];
+        }
+      }
+    }
+
+    if (sku) {
+      const input = document.getElementById('learnSku');
+      if (input) {
+        input.value = sku;
+        input.style.borderColor = 'var(--success)';
+        toast('✅ SKU found: ' + sku, 'success');
+      }
+    }
+  } catch(e) {
+    console.warn('OCR error:', e);
+    status.textContent = '📸 Ready — point at barcode';
   }
 }
 
