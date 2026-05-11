@@ -31,28 +31,29 @@ jobs:
 
           npm install -g cordova
 
+          # Install platform-specific deps
+          npm install -g cordova-android
+
           # Create Cordova project
           cordova create android-app com.pricechecker.app "Price Checker"
           cd android-app
 
-          # Add Android platform
-          cordova platform add android@13.0.0
+          # Add Android platform with specific version that supports modern Gradle
+          cordova platform add android@12.0.0
 
-          # Install barcode scanner plugin
-          cordova plugin add phonegap-plugin-barcodescanner
-          cordova plugin add cordova-plugin-splashscreen
-
-          # Copy our web app files to www/
+          # Clean www and copy app files
           rm -rf www/*
           cp ../price-checker-standalone.html www/index.html
-          cp ../static/style.css www/ 2>/dev/null || true
-          cp ../static/app.js www/ 2>/dev/null || true
           cp ../manifest.json www/
           cp ../service-worker.js www/
           cp ../icon-192.png www/ 2>/dev/null || true
           cp ../icon-512.png www/ 2>/dev/null || true
 
-          # Build debug APK (faster, no signing needed)
+          # Set compileSdkVersion in build.gradle
+          sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/' platforms/android/cdv-gradle-name.gradle 2>/dev/null || true
+          sed -i 's/compileSdkVersion .*/compileSdkVersion 34/' platforms/android/app/build.gradle 2>/dev/null || true
+
+          # Build debug APK
           cordova build android --debug
 
       - name: Upload APK
