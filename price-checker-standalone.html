@@ -464,7 +464,7 @@ loadTesseract(async () => {
     if (typeof Tesseract === 'undefined') return;
     const w = await Tesseract.createWorker('eng', 1, { logger: () => {} });
     await w.setParameters({
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-/:',
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-/: ',
     });
     window.__ocrWorker = w;
     ocrReady = true;
@@ -477,11 +477,17 @@ async function ocrSkuFromCamera(barcode) {
       const video = document.getElementById('camera');
       if (!video || !video.videoWidth) return;
       const detector = new TextDetector();
-      const texts = await detector.detect(video);
-      if (texts && texts.length > 0) {
-        const full = texts.map(t => t.rawValue).join(' ');
-        const sku = extractSku(full, barcode);
-        if (sku) { fillSku(sku); return; }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const texts = await detector.detect(video);
+        if (texts && texts.length > 0) {
+          const full = texts.map(t => t.rawValue).join(' ');
+          if (full.length > 3) {
+            const sku = extractSku(full, barcode);
+            if (sku) { fillSku(sku); return; }
+            showOcrDebug(full);
+          }
+        }
+        await new Promise(r => setTimeout(r, 200));
       }
     }
   } catch(e) { /* nop */ }
@@ -489,27 +495,47 @@ async function ocrSkuFromCamera(barcode) {
   if (!ocrReady || !window.__ocrWorker) return;
   const video = document.getElementById('camera');
   if (!video || !video.videoWidth) return;
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = Math.min(video.videoHeight, Math.round(video.videoWidth * 0.6));
-  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-  try {
-    const { data } = await window.__ocrWorker.recognize(canvas);
-    const sku = extractSku(data.text || '', barcode);
-    if (sku) fillSku(sku);
-  } catch(e) { /* OCR failed - user types manually */ }
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = Math.min(video.videoHeight, Math.round(video.videoWidth * 0.6));
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    try {
+      const { data } = await window.__ocrWorker.recognize(canvas);
+      const text = data.text || '';
+      if (text.length > 3) {
+        const sku = extractSku(text, barcode);
+        if (sku) { fillSku(sku); return; }
+        showOcrDebug(text);
+        break;
+      }
+    } catch(e) { /* OCR failed - user types manually */ }
+    await new Promise(r => setTimeout(r, 300));
+  }
+}
+
+function showOcrDebug(text) {
+  const input = document.getElementById('learnSku');
+  if (!input) return;
+  const preview = text.trim().substring(0, 60).replace(/\n/g, ' ');
+  toast('📖 Read: ' + preview, '');
 }
 
 function extractSku(text, barcode) {
-  let m = text.match(/[Ss][Kk][Uu]\s*:?\s*(\d{6,13})/);
-  if (m) return m[1];
-  m = text.match(/\b(1301\d{3,9})\b/);
-  if (m) return m[1];
-  const nums = text.match(/\b(\d{7,13})\b/g);
-  if (nums) {
-    const f = nums.filter(n => n !== barcode && !barcode.includes(n) && !n.includes(barcode));
-    if (f.length) return f[0];
-  }
+  let m = text.match(/[Ss][Kk][Uu]\s*:?\s*(\d{4,13})/);
+  if (m && m[1] !== barcode) return m[1];
+  m = text.match(/(?:[Ii][Tt][Ee][Mm]|[Pp][Rr][Oo][Dd][Uu][Cc][Tt]\s*[Ii][Dd]|[Ss][Tt][Oo][Cc][Kk])\s*:?\s*:?\s*(\d{4,13})/);
+  if (m && m[1] !== barcode) return m[1];
+  const nums = text.match(/\b(\d{4,14})\b/g) || [];
+  const valid = nums.filter(n =>
+    n !== barcode &&
+    n.length >= 4 &&
+    n.length <= 14 &&
+    !barcode.includes(n) &&
+    !n.includes(barcode)
+  );
+  if (valid.length > 0) return valid[0];
   return null;
 }
 
