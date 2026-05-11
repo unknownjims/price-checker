@@ -66,6 +66,9 @@ body{display:flex;flex-direction:column}
 .prod-item .bcode{font-size:11px;color:var(--text3);font-family:monospace}
 .prod-item .sku{font-size:11px;color:var(--primary);font-family:monospace;margin-top:2px}
 .prod-item .desc{font-size:13px;color:var(--text);margin-top:2px}
+.prod-item .prod-del{background:none;border:none;color:var(--text3);font-size:14px;cursor:pointer;padding:4px 6px;border-radius:4px}
+.prod-item .prod-del:active{background:var(--surface2);color:var(--danger)}
+.prod-item{cursor:pointer;-webkit-tap-highlight-color:transparent;}
 .empty-state{text-align:center;padding:40px 20px;color:var(--text3)}
 .empty-state .icon{font-size:40px;margin-bottom:12px}
 .empty-state h3{font-size:16px;color:var(--text2);margin-bottom:4px}
@@ -247,8 +250,8 @@ body{display:flex;flex-direction:column}
 
     <div class="toast" id="toast"></div>
 
-<!-- OCR for reading SKU from price tags -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<!-- OCR - load async so it doesn't block app -->
+<script async src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 // ═══════════════════════════════════════════
 // INDEXEDDB
@@ -448,87 +451,86 @@ async function onBarcodeDetected(code) {
 // OCR SKU FROM PRICE TAG
 // ═══════════════════════════════════════════
 let ocrWorker = null;
+let ocrReady = false;
 
-async function getOcrWorker() {
-  if (ocrWorker) return ocrWorker;
+// Try to init OCR worker on idle (doesn't block app)
+setTimeout(async () => {
   try {
-    ocrWorker = await Tesseract.createWorker('eng', 1, {
-      logger: (m) => { /* silent */ }
-    });
-    // Set character whitelist for SKU: digits, letters, and common separators
-    await ocrWorker.setParameters({
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-/:',
-    });
-    return ocrWorker;
+    if (typeof Tesseract !== 'undefined') {
+      ocrWorker = await Tesseract.createWorker('eng', 1, {
+        logger: () => {}
+      });
+      await ocrWorker.setParameters({
+        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-/:',
+      });
+      ocrReady = true;
+    }
   } catch(e) {
-    console.warn('OCR worker init failed:', e);
-    return null;
+    console.warn('OCR init deferred');
   }
-}
+}, 3000);
 
 async function ocrSkuFromCamera(barcode) {
   const status = document.getElementById('scanStatus');
-  status.textContent = '🔍 Reading SKU from tag...';
 
+  // FIRST: Try native TextDetector API (instantly available on Chrome Android)
   try {
-    // Capture a frame from the video
+    if ('TextDetector' in window) {
+      const video = document.getElementById('camera');
+      if (!video || !video.videoWidth) return;
+
+      const detector = new TextDetector();
+      const texts = await detector.detect(video);
+      if (texts && texts.length > 0) {
+        const full = texts.map(t => t.rawValue).join(' ');
+        const sku = extractSku(full, barcode);
+        if (sku) { fillSku(sku); return; }
+      }
+    }
+  } catch(e) { /* TextDetector not available */ }
+
+  // SECOND: Wait for Tesseract.js to be ready
+  if (!ocrReady) return;
+
+  status.textContent = '🔍 Reading SKU from tag...';
+  try {
     const video = document.getElementById('camera');
     if (!video || !video.videoWidth) return;
 
     const canvas = document.createElement('canvas');
-    // Capture a wider/higher area to include text below the barcode
     canvas.width = video.videoWidth;
     canvas.height = Math.min(video.videoHeight, Math.round(video.videoWidth * 0.6));
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Run OCR
-    const worker = await getOcrWorker();
-    if (!worker) {
-      status.textContent = '📸 Ready — point at barcode';
-      return;
-    }
-
-    const { data } = await worker.recognize(canvas);
-    const text = data.text || '';
-    status.textContent = '📸 Ready — point at barcode';
-
-    // Extract SKU patterns: look for "SKU", "SKU:", or standalone number sequences
-    let sku = null;
-
-    // Pattern 1: "SKU: 1234567890"
-    const skuMatch = text.match(/[Ss][Kk][Uu]\s*:?\s*(\d{6,13})/);
-    if (skuMatch) sku = skuMatch[1];
-
-    // Pattern 2: "1301" prefix (common UK retail SKU format)
-    if (!sku) {
-      const numMatch = text.match(/\b(1301\d{3,9})\b/);
-      if (numMatch) sku = numMatch[1];
-    }
-
-    // Pattern 3: Any 7-13 digit number that's NOT the barcode itself
-    if (!sku) {
-      const numbers = text.match(/\b(\d{7,13})\b/g);
-      if (numbers) {
-        // Pick the one that doesn't match the barcode
-        const filtered = numbers.filter(n => n !== barcode && !barcode.includes(n) && !n.includes(barcode));
-        if (filtered.length > 0) {
-          sku = filtered[0];
-        }
-      }
-    }
-
-    if (sku) {
-      const input = document.getElementById('learnSku');
-      if (input) {
-        input.value = sku;
-        input.style.borderColor = 'var(--success)';
-        toast('✅ SKU found: ' + sku, 'success');
-      }
-    }
+    const { data } = await ocrWorker.recognize(canvas);
+    const sku = extractSku(data.text || '', barcode);
+    if (sku) fillSku(sku);
   } catch(e) {
     console.warn('OCR error:', e);
-    status.textContent = '📸 Ready — point at barcode';
+  }
+  status.textContent = '📸 Ready — point at barcode';
+}
+
+function extractSku(text, barcode) {
+  let m = text.match(/[Ss][Kk][Uu]\s*:?\s*(\d{6,13})/);
+  if (m) return m[1];
+  m = text.match(/\b(1301\d{3,9})\b/);
+  if (m) return m[1];
+  const nums = text.match(/\b(\d{7,13})\b/g);
+  if (nums) {
+    const filtered = nums.filter(n => n !== barcode && !barcode.includes(n) && !n.includes(barcode));
+    if (filtered.length > 0) return filtered[0];
+  }
+  return null;
+}
+
+function fillSku(sku) {
+  const input = document.getElementById('learnSku');
+  if (input) {
+    input.value = sku;
+    input.style.borderColor = 'var(--success)';
+    toast('✅ SKU found: ' + sku, 'success');
   }
 }
 
@@ -663,12 +665,43 @@ async function renderProducts() {
     return;
   }
   list.innerHTML = filtered.slice(0, 200).map(p => `
-    <div class="prod-item">
-      <div class="bcode">${p.barcode}</div>
-      <div class="sku">SKU: ${p.sku}</div>
-      <div class="desc">${p.description || '—'}</div>
+    <div class="prod-item" onclick="showProductDetail('${p.barcode}')">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div>
+          <div class="bcode">${p.barcode}</div>
+          <div class="sku">SKU: ${p.sku}</div>
+          <div class="desc">${p.description || '—'}</div>
+        </div>
+        <button class="prod-del" onclick="event.stopPropagation();confirmDelete('Delete ${p.sku}?','This removes the product from your database.','deleteProduct(\'${p.barcode}\')')">✕</button>
+      </div>
     </div>
   `).join('');
+}
+
+async function showProductDetail(barcode) {
+  const p = await dbGet('products', barcode);
+  if (!p) return;
+  const c = document.getElementById('resultContent');
+  c.innerHTML = `
+    <div style="text-align:center;padding:12px">
+      <div style="font-size:32px;margin-bottom:8px">🏷️</div>
+      <h2>${p.description || 'No description'}</h2>
+      <div class="sku" style="margin:4px 0">SKU: ${p.sku}</div>
+      <div class="sku">Barcode: ${p.barcode}</div>
+      <div class="result-actions" style="margin-top:16px">
+        <button class="btn-secondary" onclick="hideResult()">Done</button>
+        <button class="btn-primary" style="background:var(--danger)" onclick="confirmDelete('Delete ${p.sku}?','This removes the product from your database.','deleteProduct(\'${p.barcode}\');hideResult()')">🗑️ Delete</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('resultCard').classList.add('show');
+}
+
+async function deleteProduct(barcode) {
+  closeModal('confirmModal');
+  await dbDelete('products', barcode);
+  renderProducts();
+  toast('🗑️ Product deleted', 'success');
 }
 
 // ═══════════════════════════════════════════
