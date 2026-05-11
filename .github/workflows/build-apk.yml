@@ -25,23 +25,21 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build APK with Cordova
+      - name: Build APK
+        shell: bash
         run: |
           set -euo pipefail
 
           npm install -g cordova
 
-          # Install platform-specific deps
-          npm install -g cordova-android
+          # Create project
+          cordova create pc-app com.pricechecker.app "Price Checker"
+          cd pc-app
 
-          # Create Cordova project
-          cordova create android-app com.pricechecker.app "Price Checker"
-          cd android-app
+          # Add android platform (use 11 which is more stable)
+          cordova platform add android@11.0.0
 
-          # Add Android platform with specific version that supports modern Gradle
-          cordova platform add android@12.0.0
-
-          # Clean www and copy app files
+          # Copy web files
           rm -rf www/*
           cp ../price-checker-standalone.html www/index.html
           cp ../manifest.json www/
@@ -49,9 +47,21 @@ jobs:
           cp ../icon-192.png www/ 2>/dev/null || true
           cp ../icon-512.png www/ 2>/dev/null || true
 
-          # Set compileSdkVersion in build.gradle
-          sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/' platforms/android/cdv-gradle-name.gradle 2>/dev/null || true
-          sed -i 's/compileSdkVersion .*/compileSdkVersion 34/' platforms/android/app/build.gradle 2>/dev/null || true
+          # Fix Gradle wrapper to use 8.7 (compatible version)
+          mkdir -p platforms/android/gradle/wrapper
+          echo "distributionBase=GRADLE_USER_HOME" > platforms/android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-bin.zip" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
+          echo "networkTimeout=10000" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
+          echo "validateDistributionUrl=true" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
+
+          # Patch compileSdkVersion in gradle files
+          find platforms/android -name "*.gradle" -exec grep -l compileSdk {} \; 2>/dev/null | while read f; do
+            sed -i 's/compileSdk [0-9]*/compileSdk 34/g' "$f" 2>/dev/null || true
+            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 34/g' "$f" 2>/dev/null || true
+          done
 
           # Build debug APK
           cordova build android --debug
@@ -60,5 +70,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Price-Checker-APK
-          path: android-app/platforms/android/app/build/outputs/apk/debug/*.apk
+          path: pc-app/platforms/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
