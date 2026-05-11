@@ -25,7 +25,16 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build APK
+      - name: Install Gradle 8.7 (for Cordova compatibility)
+        shell: bash
+        run: |
+          cd /tmp
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          unzip -q gradle-8.7-bin.zip
+          echo "GRADLE_HOME=/tmp/gradle-8.7" >> $GITHUB_ENV
+          echo "/tmp/gradle-8.7/bin" >> $GITHUB_PATH
+
+      - name: Build APK with Cordova
         shell: bash
         run: |
           set -euo pipefail
@@ -36,7 +45,7 @@ jobs:
           cordova create pc-app com.pricechecker.app "Price Checker"
           cd pc-app
 
-          # Add android platform (use 11 which is more stable)
+          # Add android platform
           cordova platform add android@11.0.0
 
           # Copy web files
@@ -47,23 +56,13 @@ jobs:
           cp ../icon-192.png www/ 2>/dev/null || true
           cp ../icon-512.png www/ 2>/dev/null || true
 
-          # Fix Gradle wrapper to use 8.7 (compatible version)
-          mkdir -p platforms/android/gradle/wrapper
-          echo "distributionBase=GRADLE_USER_HOME" > platforms/android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionPath=wrapper/dists" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-bin.zip" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
-          echo "networkTimeout=10000" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
-          echo "validateDistributionUrl=true" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
-          echo "zipStoreBase=GRADLE_USER_HOME" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
-          echo "zipStorePath=wrapper/dists" >> platforms/android/gradle/wrapper/gradle-wrapper.properties
-
-          # Patch compileSdkVersion in gradle files
+          # Fix compileSdkVersion in gradle files
           find platforms/android -name "*.gradle" -exec grep -l compileSdk {} \; 2>/dev/null | while read f; do
             sed -i 's/compileSdk [0-9]*/compileSdk 34/g' "$f" 2>/dev/null || true
             sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 34/g' "$f" 2>/dev/null || true
           done
 
-          # Build debug APK
+          # Build debug APK (uses Gradle 8.7 now)
           cordova build android --debug
 
       - name: Upload APK
