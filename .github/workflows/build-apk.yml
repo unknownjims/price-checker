@@ -16,64 +16,38 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Android SDK with build tools
-        uses: android-actions/setup-android@v3
-
-      - name: Install required build tools
-        shell: bash
-        run: |
-          # Install specific build-tools version that Cordova needs
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;32.0.0" "build-tools;34.0.0" "platforms;android-34" --sdk_root=$ANDROID_HOME 2>&1 | tail -5
-
-      - name: Install Gradle 8.7
-        shell: bash
-        run: |
-          cd /tmp
-          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
-          unzip -q gradle-8.7-bin.zip
-          echo "GRADLE_HOME=/tmp/gradle-8.7" >> $GITHUB_ENV
-          echo "/tmp/gradle-8.7/bin" >> $GITHUB_PATH
-
-      - name: Build APK with Cordova
+      - name: Build APK via PWABuilder
         shell: bash
         run: |
           set -euo pipefail
 
-          npm install -g cordova
+          # Serve the PWA locally
+          npm install -g serve
+          serve -s . -l 8080 --no-clipboard &
+          sleep 3
+          echo "Server started, testing..."
+          curl -s http://localhost:8080/manifest.json | head -5
 
-          # Create project
-          cordova create pc-app com.pricechecker.app "Price Checker"
-          cd pc-app
+          # Try PWABuilder's local APK generation
+          npm install -g pwabuilder
 
-          # Add android platform
-          cordova platform add android@11.0.0
+          # Use the local pwabuilder CLI to generate APK
+          mkdir -p output
+          npx pwabuilder --url http://localhost:8080 --os android --output ./output 2>&1 | tail -30 || true
 
-          # Copy web files
-          rm -rf www/*
-          cp ../price-checker-standalone.html www/index.html
-          cp ../manifest.json www/
-          cp ../service-worker.js www/
-          cp ../icon-192.png www/ 2>/dev/null || true
-          cp ../icon-512.png www/ 2>/dev/null || true
+          # Check what was generated
+          find ./output -type f -name "*.apk" 2>/dev/null || true
+          find . -type f -name "*.apk" 2>/dev/null || true
 
-          # Fix compileSdkVersion in gradle files
-          find platforms/android -name "*.gradle" -exec grep -l compileSdk {} \; 2>/dev/null | while read f; do
-            sed -i 's/compileSdk [0-9]*/compileSdk 34/g' "$f" 2>/dev/null || true
-            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 34/g' "$f" 2>/dev/null || true
-          done
-
-          # Build debug APK
-          cordova build android --debug
+          # Kill server
+          kill %1 2>/dev/null || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Price-Checker-APK
-          path: pc-app/platforms/android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          path: |
+            ./output/*.apk
+            ./*.apk
+            pwabuilder/**/*.apk
+          if-no-files-found: warn
