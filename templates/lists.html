@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Price Lists — Price Checker{% endblock %}
+{% set active_tab = 'lists' %}
+
+{% block content %}
+<div class="page">
+    <div class="page-header">
+        <h1>Price Lists</h1>
+        <button class="btn btn-primary btn-sm" onclick="PriceChecker.showCreateListModal()">+ New List</button>
+    </div>
+
+    <div id="lists-container">
+        <div class="list-placeholder">
+            <p>Loading lists...</p>
+            <div class="spinner"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Create List Modal -->
+<div id="create-list-modal" class="modal-overlay hidden" onclick="PriceChecker.closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>Create Price List</h3>
+            <button class="modal-close" onclick="PriceChecker.closeCreateListModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>List Name</label>
+                <input type="text" id="new-list-name" placeholder="e.g. Monsoon Sale, Mother's Day Promo">
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select id="new-list-type" onchange="PriceChecker.onListTypeChange()">
+                    <option value="markdown">Markdown (Permanent)</option>
+                    <option value="promotion">Promotion (Temporary)</option>
+                </select>
+            </div>
+            <div class="form-group" id="effective-date-group">
+                <label>Effective Date (optional)</label>
+                <input type="date" id="new-list-effective-date">
+            </div>
+            <div class="form-group" id="end-date-group">
+                <label>End Date <span id="end-date-req" class="required-star">*</span></label>
+                <input type="date" id="new-list-end-date">
+            </div>
+            <div class="form-hint" id="list-type-hint">
+                Markdowns are permanent price reductions with no end date.
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="PriceChecker.closeCreateListModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="PriceChecker.createPriceList()">Create List</button>
+        </div>
+    </div>
+</div>
+
+<!-- Import Items Modal -->
+<div id="import-items-modal" class="modal-overlay hidden" onclick="PriceChecker.closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>Import List Items</h3>
+            <button class="modal-close" onclick="PriceChecker.closeImportItemsModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-desc">Upload a CSV file with SKU and sale price columns.</p>
+            <div class="form-group">
+                <label>SKU Column Index</label>
+                <input type="number" id="import-sku-col" value="0" min="0">
+            </div>
+            <div class="form-group">
+                <label>Sale Price Column Index</label>
+                <input type="number" id="import-price-col" value="1" min="0">
+            </div>
+            <div class="form-group">
+                <label>Original Price Column (optional)</label>
+                <input type="number" id="import-original-price-col" value="" min="0" placeholder="Leave empty if not in file">
+            </div>
+            <div class="form-group">
+                <label>CSV File</label>
+                <input type="file" id="import-items-file" accept=".csv,.txt">
+            </div>
+            <div class="form-group checkbox-group">
+                <label>
+                    <input type="checkbox" id="import-items-header" checked>
+                    First row is header
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="PriceChecker.closeImportItemsModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="PriceChecker.uploadListItems()">Upload</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        PriceChecker.loadLists();
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Scan — Price Checker{% endblock %}
+{% set active_tab = 'scan' %}
+
+{% block content %}
+<!-- Camera Scanner View -->
+<div id="scanner-container">
+    <video id="scanner-video" autoplay playsinline muted></video>
+    <canvas id="scanner-canvas"></canvas>
+
+    <!-- Scanning overlay with corner brackets -->
+    <div id="scanner-overlay">
+        <div id="viewfinder">
+            <div class="corner tl"></div>
+            <div class="corner tr"></div>
+            <div class="corner bl"></div>
+            <div class="corner br"></div>
+            <div id="scan-line"></div>
+        </div>
+        <div id="camera-hint">Align barcode within the frame</div>
+    </div>
+
+    <!-- Camera controls -->
+    <div id="camera-controls">
+        <button id="btn-toggle-camera" class="camera-btn" onclick="PriceChecker.toggleCamera()">
+            <svg viewBox="0 0 24 24" width="28" height="28"><path fill="currentColor" d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm-7 7H3v4c0 1.1.9 2 2 2h4v-2H5v-4zM5 5h4V3H5c-1.1 0-2 .9-2 2v4h2V5zm14-2h-4v2h4v4h2V5c0-1.1-.9-2-2-2zm0 16h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4z"/></svg>
+        </button>
+    </div>
+</div>
+
+<!-- Manual input section -->
+<div id="manual-input">
+    <div class="input-row">
+        <input type="text" id="barcode-input" inputmode="numeric" autocomplete="off"
+               placeholder="Or type barcode / SKU..." maxlength="15">
+        <button id="btn-search" onclick="PriceChecker.manualSearch()">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        </button>
+    </div>
+    <div id="scan-history-chips">
+        <!-- Recent barcodes appear here -->
+    </div>
+</div>
+
+<!-- Result card (slides up from bottom) -->
+<div id="result-card" class="hidden">
+    <div id="result-handle"></div>
+    <div id="result-content">
+        <div id="result-loading">
+            <div class="spinner"></div>
+            <p>Looking up item...</p>
+        </div>
+        <div id="result-found" class="hidden">
+            <div class="result-header">
+                <span id="result-department" class="department-badge"></span>
+                <span id="result-barcode-display" class="barcode-label"></span>
+            </div>
+            <h2 id="result-description">Product Name</h2>
+            <div class="result-sku-row">
+                <span class="label">SKU:</span>
+                <span id="result-sku" class="value"></span>
+            </div>
+            <div class="result-price-section">
+                <div class="price-row">
+                    <span class="label">Price:</span>
+                    <span id="result-price" class="price-value"></span>
+                    <span id="result-original-price" class="original-price-value"></span>
+                </div>
+                <div id="result-sale-badges"></div>
+            </div>
+            <div id="result-promo-info" class="hidden">
+                <div class="promo-details"></div>
+            </div>
+            <button id="btn-lookup-sku" class="btn btn-primary hidden" onclick="PriceChecker.showLearnModal()">
+                ✏️ New item — Tap to learn SKU
+            </button>
+        </div>
+        <div id="result-not-found" class="hidden">
+            <div class="not-found-icon">📷</div>
+            <p id="result-not-found-msg">Unknown barcode</p>
+            <button class="btn btn-primary" onclick="PriceChecker.showLearnModal()">
+                ✏️ Learn this barcode
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Learn Modal -->
+<div id="learn-modal" class="modal-overlay hidden" onclick="PriceChecker.closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>Learn New Item</h3>
+            <button class="modal-close" onclick="PriceChecker.closeLearnModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Barcode</label>
+                <input type="text" id="learn-barcode" readonly class="input-readonly">
+            </div>
+            <div class="form-group">
+                <label>SKU (10 digits)</label>
+                <input type="text" id="learn-sku" inputmode="numeric" maxlength="10"
+                       placeholder="e.g. 1301..." autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label>Description (optional)</label>
+                <input type="text" id="learn-description" placeholder="Product name">
+            </div>
+            <div class="form-group">
+                <label>Department (optional)</label>
+                <input type="text" id="learn-department" placeholder="e.g. Bags, Shoes, Jewellery">
+            </div>
+            <div class="form-group">
+                <label>Current price (optional)</label>
+                <input type="number" id="learn-price" step="0.01" min="0" placeholder="0.00">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="PriceChecker.closeLearnModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="PriceChecker.saveLearnedItem()">Save Item</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Initialize scanner on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Pre-fill from URL params (for deep linking)
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('barcode')) {
+            document.getElementById('barcode-input').value = params.get('barcode');
+            PriceChecker.manualSearch();
+        }
+    });
+</script>
+{% endblock %}

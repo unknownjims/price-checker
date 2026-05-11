@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Products — Price Checker{% endblock %}
+{% set active_tab = 'products' %}
+
+{% block content %}
+<div class="page">
+    <div class="page-header">
+        <h1>Products</h1>
+        <span id="product-count" class="badge badge-secondary">0</span>
+    </div>
+
+    <div class="search-bar">
+        <input type="text" id="product-search" placeholder="Search barcode, SKU, or description..."
+               autocomplete="off">
+        <button id="btn-clear-search" class="btn-icon hidden" onclick="PriceChecker.clearProductSearch()">&times;</button>
+    </div>
+
+    <div class="filter-row">
+        <select id="department-filter" onchange="PriceChecker.filterByDepartment()">
+            <option value="">All Departments</option>
+        </select>
+        <button id="btn-refresh-products" class="btn-icon" onclick="PriceChecker.loadProducts()">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        </button>
+    </div>
+
+    <div id="products-list" class="list-container">
+        <div class="list-placeholder">
+            <p>Loading products...</p>
+            <div class="spinner"></div>
+        </div>
+    </div>
+
+    <div id="products-pagination" class="pagination hidden">
+        <button id="btn-prev-page" class="btn btn-secondary" onclick="PriceChecker.prevPage()">Previous</button>
+        <span id="page-info">Page 1</span>
+        <button id="btn-next-page" class="btn btn-secondary" onclick="PriceChecker.nextPage()">Next</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        PriceChecker.loadProducts();
+    });
+</script>
+{% endblock %}

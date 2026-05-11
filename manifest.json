@@ -1,0 +1,29 @@
+{
+  "name": "Price Checker",
+  "short_name": "Check Prices",
+  "description": "Scan barcodes, check prices, track promotions",
+  "start_url": "/price-checker-standalone.html",
+  "scope": "/",
+  "id": "/price-checker-standalone.html",
+  "display": "standalone",
+  "background_color": "#010102",
+  "theme_color": "#5e6ad2",
+  "orientation": "portrait",
+  "categories": ["utilities", "shopping", "business"],
+  "lang": "en-GB",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

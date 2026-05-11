@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Price Checker</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#010102;--surface:#0f1011;--surface2:#141516;--border:rgba(255,255,255,0.06);--text:#f7f8f8;--text2:#8a8f98;--text3:#62666d;--primary:#5e6ad2;--primary-glow:rgba(94,106,210,0.15);--success:#27a644;--warn:#f0a030;--danger:#e5484d;--font:-apple-system,Inter,sans-serif;--radius:8px}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;-webkit-text-size-adjust:100%;overflow:hidden}
+body{display:flex;flex-direction:column}
+
+/* ─── NAV ─── */
+.nav{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--border);background:rgba(1,1,2,0.9);flex-shrink:0}
+.nav h1{font-size:15px;font-weight:600;color:var(--text)}
+.nav-actions{display:flex;gap:8px}
+.nav-btn{background:var(--surface);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer}
+.nav-btn:active{background:var(--surface2)}
+
+/* ─── PAGES ─── */
+.page{display:none;flex:1;flex-direction:column;overflow:hidden}
+.page.active{display:flex}
+
+/* ─── SCAN PAGE ─── */
+#camera-wrap{flex:1;position:relative;background:#000;overflow:hidden}
+#camera-wrap video{width:100%;height:100%;object-fit:cover}
+.scan-overlay{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.scan-frame{width:70%;max-width:300px;aspect-ratio:1;border:2px solid rgba(94,106,210,0.6);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,0.4)}
+.scan-line{position:absolute;top:0;left:0;right:0;height:2px;background:var(--primary);box-shadow:0 0 8px var(--primary);animation:scan 2s ease-in-out infinite}
+@keyframes scan{0%,100%{top:10%}50%{top:90%}}
+.scan-hint{position:absolute;bottom:20px;left:0;right:0;text-align:center;color:var(--text2);font-size:13px;pointer-events:none}
+.scan-status{position:absolute;top:12px;left:12px;right:12px;background:rgba(15,16,17,0.9);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--text2);text-align:center;backdrop-filter:blur(8px)}
+
+/* ─── RESULT CARD ─── */
+.result-card{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:20px;transform:translateY(100%);transition:transform 0.3s ease;z-index:10;max-height:50vh;overflow-y:auto}
+.result-card.show{transform:translateY(0)}
+.result-card .close{float:right;background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer}
+.result-card h2{font-size:16px;font-weight:600;margin-bottom:4px}
+.result-card .sku{font-size:13px;color:var(--text2);margin-bottom:12px}
+.result-card .row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid var(--border)}
+.result-card .row .label{color:var(--text3)}
+.result-card .row .value{color:var(--text);font-weight:500}
+.sale-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.sale-badge.markdown{background:var(--success-glow);color:var(--success)}
+.sale-badge.promotion{background:var(--warn-glow, rgba(240,160,48,0.12));color:var(--warn)}
+.promo-expiry{font-size:11px;color:var(--text3);margin-top:2px}
+.result-actions{display:flex;gap:8px;margin-top:12px}
+.result-actions button{flex:1;padding:10px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;text-align:center}
+.btn-primary{background:var(--primary);color:#fff;border:none}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.result-unknown{padding:16px;text-align:center}
+.result-unknown .icon{font-size:32px;margin-bottom:8px}
+.result-unknown input{width:100%;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:16px;text-align:center;font-family:var(--font);margin-top:8px;outline:none}
+.result-unknown input:focus{border-color:var(--primary)}
+
+/* ─── PRODUCTS PAGE ─── */
+.page-content{flex:1;overflow-y:auto;padding:12px}
+.search-bar{display:flex;gap:8px;margin-bottom:12px}
+.search-bar input{flex:1;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;outline:none}
+.search-bar input:focus{border-color:var(--primary)}
+.prod-count{font-size:12px;color:var(--text3);margin-bottom:8px}
+.prod-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px}
+.prod-item .bcode{font-size:11px;color:var(--text3);font-family:monospace}
+.prod-item .sku{font-size:11px;color:var(--primary);font-family:monospace;margin-top:2px}
+.prod-item .desc{font-size:13px;color:var(--text);margin-top:2px}
+.empty-state{text-align:center;padding:40px 20px;color:var(--text3)}
+.empty-state .icon{font-size:40px;margin-bottom:12px}
+.empty-state h3{font-size:16px;color:var(--text2);margin-bottom:4px}
+.empty-state p{font-size:13px}
+
+/* ─── LISTS PAGE ─── */
+.list-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px}
+.list-card h3{font-size:14px;font-weight:500}
+.list-card .meta{font-size:11px;color:var(--text3);margin-top:2px}
+.list-card .actions{display:flex;gap:6px;margin-top:8px}
+.list-card .actions button{font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer}
+.list-card .badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;margin-left:6px}
+.badge.markdown{background:rgba(39,166,68,0.12);color:var(--success)}
+.badge.promotion{background:rgba(240,160,48,0.12);color:var(--warn)}
+.badge.active{background:var(--primary-glow);color:var(--primary)}
+.modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
+.modal.show{display:flex}
+.modal-content{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:400px}
+.modal-content h2{font-size:16px;font-weight:600;margin-bottom:12px}
+.modal-content label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px;margin-top:10px}
+.modal-content input,.modal-content select{width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;outline:none;font-family:var(--font)}
+.modal-content input:focus{border-color:var(--primary)}
+.modal-actions{display:flex;gap:8px;margin-top:16px}
+.modal-actions button{flex:1;padding:10px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;text-align:center}
+.file-input{position:relative;overflow:hidden;display:inline-block}
+.file-input input[type=file]{position:absolute;top:0;left:0;opacity:0;width:100%;height:100%;cursor:pointer}
+
+/* ─── SETTINGS PAGE ─── */
+.settings-section{margin-bottom:16px}
+.settings-section h3{font-size:13px;color:var(--text2);margin-bottom:8px;font-weight:500}
+.settings-section button{display:block;width:100%;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;cursor:pointer;text-align:left;margin-bottom:6px}
+.settings-section button:active{background:var(--surface2)}
+.settings-section button.danger{color:var(--danger)}
+.settings-section .stat{display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:4px;font-size:13px}
+.stat-val{color:var(--primary);font-weight:600}
+
+/* ─── BOTTOM NAV ─── */
+.bottom-nav{display:flex;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.bottom-nav button{flex:1;padding:8px 0;background:none;border:none;color:var(--text3);font-size:10px;cursor:pointer;text-align:center;transition:color 0.15s}
+.bottom-nav button.active{color:var(--primary)}
+.bottom-nav button .icon{display:block;font-size:18px;margin-bottom:1px}
+.bottom-nav button .label{font-size:10px}
+
+/* ─── TOAST ─── */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;font-size:13px;z-index:30;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.3)}
+.toast.show{display:block;animation:toastIn 0.3s ease}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.toast.success{border-color:rgba(39,166,68,0.3);color:var(--success)}
+.toast.error{border-color:rgba(229,72,77,0.3);color:var(--danger)}
+
+/* ─── NANDBAR ─── */
+.nand{display:inline-block;padding:2px 6px;background:rgba(240,160,48,0.12);color:var(--warn);border-radius:3px;font-size:10px;font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- ─── NAV ─── -->
+<nav class="nav">
+  <h1>🏷️ Price Checker</h1>
+  <div class="nav-actions">
+    <button class="nav-btn" onclick="showPage('products')">📋</button>
+    <button class="nav-btn" onclick="showPage('lists')">📄</button>
+    <button class="nav-btn" onclick="showPage('settings')">⚙️</button>
+  </div>
+</nav>
+
+<!-- ─── PAGE: SCAN ─── -->
+<div id="page-scan" class="page active">
+  <div id="camera-wrap">
+    <video id="camera" autoplay playsinline muted></video>
+    <div class="scan-overlay">
+      <div class="scan-frame"><div class="scan-line"></div></div>
+    </div>
+    <div class="scan-status" id="scanStatus">📸 Opening camera...</div>
+    <div class="scan-hint">Point camera at barcode to scan</div>
+  </div>
+</div>
+
+<!-- ─── RESULT CARD ─── -->
+<div class="result-card" id="resultCard">
+  <button class="close" onclick="hideResult()">✕</button>
+  <div id="resultContent"></div>
+</div>
+
+<!-- ─── PAGE: PRODUCTS ─── -->
+<div id="page-products" class="page">
+  <div class="page-content">
+    <div class="search-bar">
+      <input type="text" id="prodSearch" placeholder="Search barcode, SKU, or description..." oninput="renderProducts()">
+    </div>
+    <div class="prod-count" id="prodCount"></div>
+    <div id="prodList"></div>
+  </div>
+</div>
+
+<!-- ─── PAGE: LISTS ─── -->
+<div id="page-lists" class="page">
+  <div class="page-content">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="prod-count" id="listCount"></div>
+      <button class="nav-btn" onclick="showNewListModal()">+ New List</button>
+    </div>
+    <div id="listContainer"></div>
+  </div>
+</div>
+
+<!-- ─── PAGE: SETTINGS ─── -->
+<div id="page-settings" class="page">
+  <div class="page-content">
+    <div class="settings-section">
+      <h3>📊 Database Stats</h3>
+      <div class="stat"><span>Products mapped</span><span class="stat-val" id="sProducts">0</span></div>
+      <div class="stat"><span>Sale/promotion lists</span><span class="stat-val" id="sLists">0</span></div>
+      <div class="stat"><span>Total scans</span><span class="stat-val" id="sScans">0</span></div>
+    </div>
+    <div class="settings-section">
+      <h3>📥 Import</h3>
+      <button onclick="document.getElementById('csvImport').click()">
+        📄 Import Product CSV <span class="nand">CSV columns: barcode,sku,description</span>
+        <input type="file" id="csvImport" accept=".csv" style="display:none" onchange="importCSV(event)">
+      </button>
+      <button onclick="document.getElementById('listImport').click()">
+        📋 Import Sale List CSV <span class="nand">Columns: sku,sale_price</span>
+        <input type="file" id="listImport" accept=".csv" style="display:none" onchange="importListItems(event)">
+      </button>
+    </div>
+    <div class="settings-section">
+      <h3>📤 Export</h3>
+      <button onclick="exportProducts()">📤 Export Products (CSV)</button>
+      <button onclick="exportAllData()">💾 Export Full Backup (JSON)</button>
+    </div>
+    <div class="settings-section">
+      <h3>⚠️ Danger Zone</h3>
+      <button class="danger" onclick="clearAllData()">🗑️ Clear All Data</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── BOTTOM NAV ─── -->
+<div class="bottom-nav">
+  <button class="active" onclick="showPage('scan')"><span class="icon">📸</span><span class="label">Scan</span></button>
+  <button onclick="showPage('products')"><span class="icon">📋</span><span class="label">Products</span></button>
+  <button onclick="showPage('lists')"><span class="icon">📄</span><span class="label">Lists</span></button>
+  <button onclick="showPage('settings')"><span class="icon">⚙️</span><span class="label">Settings</span></button>
+</div>
+
+<!-- ─── MODALS ─── -->
+<div class="modal" id="newListModal">
+  <div class="modal-content">
+    <h2>New Price List</h2>
+    <label>Name</label>
+    <input type="text" id="listName" placeholder="e.g. Monsoon Sale July 2026">
+    <label>Type</label>
+    <select id="listType">
+      <option value="markdown">Permanent Markdown</option>
+      <option value="promotion">Temporary Promotion</option>
+    </select>
+    <div id="endDateField" style="display:none">
+      <label>End Date</label>
+      <input type="date" id="listEndDate">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('newListModal')">Cancel</button>
+      <button class="btn-primary" onclick="createList()">Create</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="confirmModal">
+  <div class="modal-content">
+    <h2 id="confirmTitle">Are you sure?</h2>
+    <p id="confirmText" style="font-size:13px;color:var(--text2)"></p>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn-primary" id="confirmBtn" style="background:var(--danger)" onclick="">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// INDEXEDDB
+// ═══════════════════════════════════════════
+const DB_NAME = 'PriceCheckerDB';
+const DB_VER = 1;
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('products')) {
+        const ps = db.createObjectStore('products', { keyPath: 'barcode' });
+        ps.createIndex('sku', 'sku', { unique: true });
+        ps.createIndex('description', 'description', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('lists')) {
+        const ls = db.createObjectStore('lists', { keyPath: 'id', autoIncrement: true });
+        ls.createIndex('type', 'type', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('listItems')) {
+        const li = db.createObjectStore('listItems', { keyPath: 'id', autoIncrement: true });
+        li.createIndex('listId', 'listId', { unique: false });
+        li.createIndex('sku', 'sku', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('scanLog')) {
+        db.createObjectStore('scanLog', { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbAdd(store, data) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).add(data);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbPut(store, data) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).put(data);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbGet(store, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbGetAll(store) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbGetByIndex(store, indexName, value) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).index(indexName).getAll(value);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbDelete(store, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbClear(store) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).clear();
+    req.onsuccess = () => resolve();
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbCount(store) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+// ═══════════════════════════════════════════
+// CAMERA + BARCODE SCANNING
+// ═══════════════════════════════════════════
+let cameraStream = null;
+let scanning = false;
+
+async function startCamera() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+    document.getElementById('camera').srcObject = cameraStream;
+    document.getElementById('scanStatus').textContent = '📸 Ready — point at barcode';
+    startScanning();
+  } catch(e) {
+    document.getElementById('scanStatus').textContent = '⚠️ Camera unavailable. Type barcode manually below.';
+    showManualInput();
+  }
+}
+
+async function startScanning() {
+  if (scanning) return;
+  scanning = true;
+
+  if ('BarcodeDetector' in window) {
+    const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'itf', 'qr_code'] });
+    const video = document.getElementById('camera');
+
+    async function detect() {
+      if (!scanning) return;
+      try {
+        const barcodes = await detector.detect(video);
+        if (barcodes.length > 0) {
+          const code = barcodes[0].rawValue;
+          // Vibrate
+          if (navigator.vibrate) navigator.vibrate(50);
+          onBarcodeDetected(code);
+          // Pause briefly to avoid double-scan
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      } catch(e) { /* detection frame error - normal */ }
+      if (scanning) requestAnimationFrame(detect);
+    }
+    detect();
+  } else {
+    document.getElementById('scanStatus').textContent = '⚠️ Barcode scanning not supported in this browser. Type barcode manually.';
+    showManualInput();
+  }
+}
+
+function stopCamera() {
+  scanning = false;
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+}
+
+// ═══════════════════════════════════════════
+// BARCODE HANDLING
+// ═══════════════════════════════════════════
+let lastScanned = '';
+let scanCooldown = false;
+
+async function onBarcodeDetected(code) {
+  if (scanCooldown) return;
+  scanCooldown = true;
+  setTimeout(() => scanCooldown = false, 1500);
+
+  lastScanned = code;
+
+  // Log the scan
+  try {
+    await dbAdd('scanLog', { barcode: code, timestamp: new Date().toISOString() });
+  } catch(e) {}
+
+  // Look up product
+  const product = await dbGet('products', code);
+  if (product) {
+    showProductResult(product);
+  } else {
+    showUnknownResult(code);
+  }
+}
+
+async function showProductResult(product) {
+  const c = document.getElementById('resultContent');
+
+  // Check active prices
+  const allLists = await dbGetAll('lists');
+  const now = new Date();
+  let prices = [];
+
+  for (const list of allLists) {
+    if (list.type === 'promotion' && list.endDate && new Date(list.endDate) < now) continue;
+    if (!list.active && list.active !== undefined) continue;
+    const items = await dbGetByIndex('listItems', 'listId', list.id);
+    const match = items.find(i => i.sku === product.sku);
+    if (match) {
+      prices.push({ list, item: match });
+    }
+  }
+
+  let priceHTML = '';
+  if (prices.length > 0) {
+    priceHTML = prices.map(p => {
+      const discount = p.item.discount_pct || Math.round((1 - p.item.sale_price / (p.item.original_price || p.item.sale_price)) * 100);
+      const typeClass = p.list.type === 'markdown' ? 'markdown' : 'promotion';
+      const expiry = p.list.endDate ? `<div class="promo-expiry">Ends ${p.list.endDate}</div>` : '';
+      return `<div class="row">
+        <span><span class="sale-badge ${typeClass}">${discount}% OFF</span> ${p.list.name}</span>
+        <span class="value">£${p.item.sale_price.toFixed(2)}</span>
+      </div>${expiry}`;
+    }).join('');
+  }
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div style="width:40px;height:40px;border-radius:8px;background:var(--primary-glow);display:flex;align-items:center;justify-content:center;font-size:18px">🏷️</div>
+      <div>
+        <h2>${product.description || 'Unknown Product'}</h2>
+        <div class="sku">SKU: ${product.sku} &middot; ${product.barcode}</div>
+      </div>
+    </div>
+    <div class="row"><span class="label">Department</span><span class="value">${product.department || '—'}</span></div>
+    <div class="row"><span class="label">Current price</span><span class="value">${product.current_price ? '£' + product.current_price.toFixed(2) : '—'}</span></div>
+    ${priceHTML}
+    <div class="result-actions">
+      <button class="btn-primary" onclick="hideResult()">Scan next</button>
+    </div>
+  `;
+  document.getElementById('resultCard').classList.add('show');
+}
+
+async function showUnknownResult(barcode) {
+  const c = document.getElementById('resultContent');
+  c.innerHTML = `
+    <div class="result-unknown">
+      <div class="icon">❓</div>
+      <h3>Unknown Item</h3>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:4px">Barcode: ${barcode}</p>
+      <p style="font-size:12px;color:var(--text3);margin-bottom:12px">Type the 10-digit SKU from the price tag:</p>
+      <input type="text" id="learnSku" inputmode="numeric" pattern="[0-9]*" placeholder="1301..." maxlength="10" autofocus>
+      <div class="result-actions" style="margin-top:12px">
+        <button class="btn-secondary" onclick="hideResult()">Cancel</button>
+        <button class="btn-primary" onclick="learnProduct('${barcode}')">Save SKU</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('resultCard').classList.add('show');
+  setTimeout(() => document.getElementById('learnSku')?.focus(), 300);
+}
+
+async function learnProduct(barcode) {
+  const sku = document.getElementById('learnSku').value.trim();
+  if (sku.length < 5) {
+    toast('Please enter a valid SKU', 'error');
+    return;
+  }
+  await dbPut('products', { barcode, sku, description: '', department: '', current_price: null, last_updated: new Date().toISOString() });
+  hideResult();
+  toast('✅ Product learned — scan again to verify', 'success');
+}
+
+function showManualInput() {
+  const c = document.getElementById('camera-wrap');
+  const div = document.createElement('div');
+  div.id = 'manualInput';
+  div.style.cssText = 'position:absolute;bottom:60px;left:12px;right:12px;display:flex;gap:8px';
+  div.innerHTML = `
+    <input type="text" id="manualBarcode" placeholder="Type barcode number..." style="flex:1;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:16px;outline:none">
+    <button onclick="manualLookup()" style="padding:12px 16px;background:var(--primary);color:#fff;border:none;border-radius:var(--radius);font-size:14px;cursor:pointer">🔍</button>
+  `;
+  c.appendChild(div);
+}
+
+async function manualLookup() {
+  const code = document.getElementById('manualBarcode').value.trim();
+  if (code) onBarcodeDetected(code);
+}
+
+function hideResult() {
+  document.getElementById('resultCard').classList.remove('show');
+}
+
+// ═══════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.remove('active'));
+  const idx = { scan: 0, products: 1, lists: 2, settings: 3 }[name];
+  if (idx !== undefined) document.querySelectorAll('.bottom-nav button')[idx].classList.add('active');
+
+  if (name === 'products') renderProducts();
+  if (name === 'lists') renderLists();
+  if (name === 'settings') renderStats();
+  if (name !== 'scan') stopCamera();
+  else startCamera();
+}
+
+// ═══════════════════════════════════════════
+// PRODUCTS PAGE
+// ═══════════════════════════════════════════
+async function renderProducts() {
+  const all = await dbGetAll('products');
+  const q = (document.getElementById('prodSearch').value || '').toLowerCase();
+  const filtered = q ? all.filter(p => (p.barcode||'').includes(q) || (p.sku||'').includes(q) || (p.description||'').toLowerCase().includes(q)) : all;
+  document.getElementById('prodCount').textContent = `${filtered.length} of ${all.length} products`;
+  const list = document.getElementById('prodList');
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="empty-state"><div class="icon">📋</div><h3>No products yet</h3><p>Scan items to build your database</p></div>';
+    return;
+  }
+  list.innerHTML = filtered.slice(0, 200).map(p => `
+    <div class="prod-item">
+      <div class="bcode">${p.barcode}</div>
+      <div class="sku">SKU: ${p.sku}</div>
+      <div class="desc">${p.description || '—'}</div>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════
+// LISTS PAGE
+// ═══════════════════════════════════════════
+async function renderLists() {
+  const all = await dbGetAll('lists');
+  document.getElementById('listCount').textContent = `${all.length} lists`;
+  const container = document.getElementById('listContainer');
+  if (all.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">📄</div><h3>No price lists</h3><p>Create a sale list or promotion to get started</p></div>';
+    return;
+  }
+  container.innerHTML = all.reverse().map(l => {
+    const now = new Date();
+    const expired = l.type === 'promotion' && l.endDate && new Date(l.endDate) < now;
+    const daysLeft = l.endDate ? Math.ceil((new Date(l.endDate) - now) / (1000*60*60*24)) : null;
+    return `<div class="list-card" style="${expired ? 'opacity:0.5' : ''}">
+      <h3>${l.name} <span class="badge ${l.type}">${l.type}</span> ${l.active !== false ? '<span class="badge active">Active</span>' : ''}</h3>
+      <div class="meta">${l.type === 'promotion' ? 'Ends ' + l.endDate + (daysLeft > 0 ? ' (' + daysLeft + ' days)' : expired ? ' (EXPIRED)' : '') : 'Permanent'}</div>
+      <div class="actions">
+        <button class="btn-secondary" onclick="toggleList(${l.id})">${l.active === false ? '▶ Activate' : '⏸ Pause'}</button>
+        <button class="btn-secondary" style="color:var(--danger)" onclick="confirmDelete('Delete ${l.name}?','This removes the list and all its items.','deleteList(${l.id})')">🗑️</button>
+        <button class="btn-secondary file-input" style="position:relative;overflow:hidden">
+          + Items
+          <input type="file" accept=".csv" onchange="importListItems(event, ${l.id})" style="position:absolute;top:0;left:0;opacity:0;width:100%;height:100%;cursor:pointer">
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showNewListModal() {
+  document.getElementById('listName').value = '';
+  document.getElementById('listType').value = 'markdown';
+  document.getElementById('endDateField').style.display = 'none';
+  document.getElementById('newListModal').classList.add('show');
+}
+
+document.getElementById('listType').addEventListener('change', function() {
+  document.getElementById('endDateField').style.display = this.value === 'promotion' ? 'block' : 'none';
+});
+
+async function createList() {
+  const name = document.getElementById('listName').value.trim();
+  if (!name) { toast('Enter a list name', 'error'); return; }
+  const data = { name, type: document.getElementById('listType').value, active: true, created_at: new Date().toISOString() };
+  if (data.type === 'promotion') {
+    data.endDate = document.getElementById('listEndDate').value;
+    if (!data.endDate) { toast('Enter an end date for promotions', 'error'); return; }
+  }
+  await dbAdd('lists', data);
+  closeModal('newListModal');
+  toast('✅ List created! Now add items via CSV', 'success');
+  renderLists();
+}
+
+async function toggleList(id) {
+  const list = await dbGet('lists', id);
+  if (!list) return;
+  list.active = list.active === false ? true : false;
+  await dbPut('lists', list);
+  renderLists();
+  toast(list.active ? '▶ List activated' : '⏸ List paused', 'success');
+}
+
+async function deleteList(id) {
+  closeModal('confirmModal');
+  const items = await dbGetByIndex('listItems', 'listId', id);
+  for (const item of items) await dbDelete('listItems', item.id);
+  await dbDelete('lists', id);
+  renderLists();
+  toast('🗑️ List deleted', 'success');
+}
+
+async function importListItems(event, listId) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  const rows = text.split('\n').filter(r => r.trim());
+  let count = 0;
+
+  // If no listId specified, create a new list from the filename
+  if (!listId) {
+    toast('📋 First create a list, then import items into it', 'error');
+    return;
+  }
+
+  for (const row of rows) {
+    const parts = row.split(',');
+    if (parts.length < 2) continue;
+    const sku = parts[0].trim();
+    const salePrice = parseFloat(parts[1].trim());
+    const originalPrice = parts[2] ? parseFloat(parts[2].trim()) : null;
+    if (sku && !isNaN(salePrice)) {
+      await dbAdd('listItems', { listId, sku, sale_price: salePrice, original_price: originalPrice, discount_pct: originalPrice ? Math.round((1 - salePrice / originalPrice) * 100) : null });
+      count++;
+    }
+  }
+  event.target.value = '';
+  toast(`✅ ${count} items added to list`, 'success');
+  renderLists();
+}
+
+// ═══════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════
+async function renderStats() {
+  const pCount = await dbCount('products');
+  const lCount = await dbCount('lists');
+  const sCount = await dbCount('scanLog');
+  document.getElementById('sProducts').textContent = pCount;
+  document.getElementById('sLists').textContent = lCount;
+  document.getElementById('sScans').textContent = sCount;
+}
+
+async function importCSV(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  const rows = text.split('\n').filter(r => r.trim());
+  const headers = rows[0].toLowerCase().split(',');
+  const bIdx = headers.findIndex(h => h.includes('barcode') || h.includes('bar') || h.includes('code'));
+  const sIdx = headers.findIndex(h => h.includes('sku') || h.includes('stock'));
+  const dIdx = headers.findIndex(h => h.includes('desc') || h.includes('name') || h.includes('product'));
+  let count = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const parts = rows[i].split(',');
+    const barcode = parts[bIdx]?.trim().replace(/^"|"$/g, '');
+    const sku = parts[sIdx]?.trim().replace(/^"|"$/g, '');
+    const desc = parts[dIdx]?.trim().replace(/^"|"$/g, '');
+    if (barcode && sku) {
+      await dbPut('products', { barcode, sku, description: desc || '', department: '', current_price: null, last_updated: new Date().toISOString() });
+      count++;
+    }
+  }
+  event.target.value = '';
+  toast(`✅ ${count} products imported`, 'success');
+  renderStats();
+}
+
+function exportProducts() {
+  getAllData().then(data => {
+    const csv = 'barcode,sku,description\n' + data.products.map(p => `${p.barcode},${p.sku},"${p.description || ''}"`).join('\n');
+    downloadFile(csv, 'price-checker-products.csv', 'text/csv');
+  });
+}
+
+function exportAllData() {
+  getAllData().then(data => {
+    downloadFile(JSON.stringify(data, null, 2), 'price-checker-backup.json', 'application/json');
+  });
+}
+
+async function getAllData() {
+  const products = await dbGetAll('products');
+  const lists = await dbGetAll('lists');
+  const allItems = [];
+  for (const l of lists) {
+    const items = await dbGetByIndex('listItems', 'listId', l.id);
+    allItems.push(...items);
+  }
+  return { products, lists, listItems: allItems, exported_at: new Date().toISOString() };
+}
+
+function downloadFile(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+function clearAllData() {
+  confirmDelete('Clear all data?', 'This removes ALL products, lists, and scan history. Cannot be undone.', async () => {
+    closeModal('confirmModal');
+    await dbClear('products');
+    await dbClear('lists');
+    await dbClear('listItems');
+    await dbClear('scanLog');
+    toast('🗑️ All data cleared', 'success');
+    renderStats();
+  });
+}
+
+// ═══════════════════════════════════════════
+// MODALS / TOAST
+// ═══════════════════════════════════════════
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+function confirmDelete(title, text, callback) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmText').textContent = text;
+  document.getElementById('confirmBtn').onclick = callback;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast ' + type + ' show';
+  clearTimeout(el._timeout);
+  el._timeout = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════
+// AUTO-START
+// ═══════════════════════════════════════════
+window.addEventListener('load', async () => {
+  // Handle result card close when tapping outside
+  document.getElementById('resultCard').addEventListener('click', function(e) {
+    if (e.target === this) hideResult();
+  });
+
+  try {
+    await openDB();
+    startCamera();
+  } catch(e) {
+    document.getElementById('scanStatus').textContent = '⚠️ ' + e.message;
+  }
+});
+
+window.addEventListener('beforeunload', () => stopCamera());
+
+  // Register service worker for offline support
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
